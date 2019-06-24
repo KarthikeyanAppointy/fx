@@ -28,9 +28,11 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/dig"
+	"go.uber.org/multierr"
+
 	. "go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
-	"go.uber.org/multierr"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -667,4 +669,70 @@ func TestErrorHook(t *testing.T) {
 		assert.Contains(t, graphStr, `"fx_test.B" [color=red];`)
 		assert.Contains(t, graphStr, `"fx_test.A" [color=orange];`)
 	})
+}
+
+func TestDecorate(t *testing.T) {
+	var invoked bool
+	type A struct{ original bool }
+	app := New(
+		Module(
+			"Child",
+			Decorate(func(a A) A {
+				a.original = false
+				return a
+			}),
+			Provide(func() A { return A{original: true} }),
+		),
+		Invoke(func(a A) {
+			invoked = true
+			if a.original {
+				t.Error("Not decorated")
+			}
+		}),
+	)
+
+	if err := app.Err(); err != nil {
+		t.Error(err)
+	}
+
+	if err := app.Start(context.Background()); err != nil {
+		t.Error(err)
+	}
+
+	if err := app.Stop(context.Background()); err != nil {
+		t.Error(err)
+	}
+
+	if !invoked {
+		t.Error("not invoked")
+	}
+}
+
+func TestDecorateDig(t *testing.T) {
+	var invoked bool
+	type A struct{ original bool }
+	p := dig.New()
+	c := p.Child("Child")
+	if err := c.Provide(func() A { return A{original: true} }); err != nil {
+		t.Error("Provide: ", err)
+	}
+
+	if err := c.Decorate(func(a A) A {
+		a.original = false
+		return a
+	}); err != nil {
+		t.Error("Decorate: ", err)
+	}
+	if err := p.Invoke(func(a A) {
+		invoked = true
+		if a.original {
+			t.Error("Not decorated")
+		}
+	}); err != nil {
+		t.Error("Invoke: ", err)
+	}
+
+	if !invoked {
+		t.Error("not invoked")
+	}
 }

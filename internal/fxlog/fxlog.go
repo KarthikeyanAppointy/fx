@@ -58,6 +58,12 @@ func (l *Logger) PrintProvide(t interface{}) {
 	}
 }
 
+func (l *Logger) PrintDecorate(t interface{}) {
+	for _, rtype := range fxreflect.ReturnTypes(t) {
+		l.Printf("DECORATE\t%s <= %s", rtype, fxreflect.FuncName(t))
+	}
+}
+
 // PrintSignal logs an os.Signal.
 func (l *Logger) PrintSignal(signal os.Signal) {
 	l.Printf(strings.ToUpper(signal.String()))

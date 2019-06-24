@@ -1,10 +1,12 @@
-hash: 71b848dcf5bde6b02fd7ca7cf3ac1e7628dd27e7248f3823900bce9a78005038
-updated: 2018-09-20T11:31:48.18331584-07:00
+hash: 6dd18c0ad7ad88d7c005a3a22adb0637475db5a5e4f7c0fee1925ab06b1db298
+updated: 2019-06-24T15:20:41.390137+05:30
 imports:
 - name: go.uber.org/atomic
-  version: 1ea20fb1cbb1cc08cbd0d913a96dead89aa18289
+  version: df976f2515e274675050de7b3f42545de80594fd
 - name: go.uber.org/dig
-  version: 7ff117f761a3f1b3eb521945c17a1091438eb6de
+  version: f32b35a9d29acaa04ec794bff55e23d8c5582407
+  repo: https://github.com/paullen/dig
+  vcs: git
   subpackages:
   - internal/digreflect
   - internal/dot
@@ -20,7 +22,7 @@ testImports:
   subpackages:
   - difflib
 - name: github.com/stretchr/testify
-  version: f35b8ab0b5a2cef36673838d662e249dd9c94686
+  version: ffdc059bfe9ce6a4e144ba849dbedead332c6053
   subpackages:
   - assert
   - require

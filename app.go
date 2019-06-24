@@ -34,10 +34,11 @@ import (
 	"time"
 
 	"go.uber.org/dig"
+	"go.uber.org/multierr"
+
 	"go.uber.org/fx/internal/fxlog"
 	"go.uber.org/fx/internal/fxreflect"
 	"go.uber.org/fx/internal/lifecycle"
-	"go.uber.org/multierr"
 )
 
 // DefaultTimeout is the default timeout for starting or stopping an
@@ -281,6 +282,7 @@ type App struct {
 	lifecycle    *lifecycleWrapper
 	provides     []interface{}
 	invokes      []interface{}
+	decorators   []interface{}
 	logger       *fxlog.Logger
 	startTimeout time.Duration
 	stopTimeout  time.Duration
@@ -288,6 +290,9 @@ type App struct {
 
 	donesMu sync.RWMutex
 	dones   []chan os.Signal
+
+	children []*App
+	parent   *App
 }
 
 // ErrorHook registers error handlers that implement error handling functions.
@@ -335,12 +340,12 @@ func New(opts ...Option) *App {
 		opt.apply(app)
 	}
 
-	for _, p := range app.provides {
-		app.provide(p)
-	}
+	provideAll(app)
 	app.provide(func() Lifecycle { return app.lifecycle })
 	app.provide(app.shutdowner)
 	app.provide(app.dotGraph)
+
+	decorateAll(app)
 
 	if app.err != nil {
 		app.logger.Printf("Error after options were applied: %v", app.err)
@@ -361,6 +366,26 @@ func New(opts ...Option) *App {
 		errorHandlerList(app.errorHooks).HandleError(err)
 	}
 	return app
+}
+
+func provideAll(app *App) {
+	for _, p := range app.provides {
+		app.provide(p)
+	}
+
+	for _, ca := range app.children {
+		provideAll(ca)
+	}
+}
+
+func decorateAll(app *App) {
+	for _, d := range app.decorators {
+		app.decorate(d)
+	}
+
+	for _, ca := range app.children {
+		decorateAll(ca)
+	}
 }
 
 // DotGraph contains a DOT language visualization of the dependency graph in
@@ -536,6 +561,54 @@ func (app *App) provide(constructor interface{}) {
 	}
 }
 
+func (app *App) decorate(constructor interface{}) {
+	if app.err != nil {
+		return
+	}
+	app.logger.PrintDecorate(constructor)
+
+	if _, ok := constructor.(Option); ok {
+		app.err = fmt.Errorf("fx.Option should be passed to fx.New directly, not to fx.Decorate: fx.Decorate received %v", constructor)
+		return
+	}
+
+	if a, ok := constructor.(Annotated); ok {
+		var opts []dig.ProvideOption
+		switch {
+		case len(a.Group) > 0 && len(a.Name) > 0:
+			app.err = fmt.Errorf("fx.Annotate may not specify both name and group for %v", constructor)
+			return
+		case len(a.Name) > 0:
+			opts = append(opts, dig.Name(a.Name))
+		case len(a.Group) > 0:
+			opts = append(opts, dig.Group(a.Group))
+
+		}
+
+		if err := app.container.Decorate(a.Target, opts...); err != nil {
+			app.err = err
+		}
+		return
+	}
+
+	if reflect.TypeOf(constructor).Kind() == reflect.Func {
+		ft := reflect.ValueOf(constructor).Type()
+
+		for i := 0; i < ft.NumOut(); i++ {
+			t := ft.Out(i)
+
+			if t == reflect.TypeOf(Annotated{}) {
+				app.err = fmt.Errorf("fx.Annotated should be passed to fx.Decorate directly, it should not be returned by the constructor: fx.Decorate received %v", constructor)
+				return
+			}
+		}
+	}
+
+	if err := app.container.Decorate(constructor); err != nil {
+		app.err = err
+	}
+}
+
 // Execute invokes in order supplied to New, returning the first error
 // encountered.
 func (app *App) executeInvokes() error {
@@ -609,5 +682,46 @@ func withTimeout(ctx context.Context, f func(context.Context) error) error {
 		return ctx.Err()
 	case err := <-c:
 		return err
+	}
+}
+
+type decorateOption []interface{}
+
+func (do decorateOption) apply(a *App) {
+	a.decorators = append(a.decorators, do...)
+}
+
+func Decorate(funcs ...interface{}) Option {
+	return decorateOption(funcs)
+}
+
+func Module(name string, opts ...Option) Option {
+	return moduleOption{
+		name:    name,
+		options: opts,
+	}
+}
+
+type moduleOption struct {
+	name    string
+	options []Option
+}
+
+func (m moduleOption) apply(a *App) {
+	cc := a.container.Child(m.name)
+	ca := &App{
+		parent:    a,
+		container: cc,
+		logger:    a.logger,
+	}
+	a.children = append(a.children, ca)
+
+	for _, opt := range m.options {
+		switch opt.(type) {
+		case invokeOption, errorHookOption, optionFunc:
+			opt.apply(a)
+		default:
+			opt.apply(ca)
+		}
 	}
 }
