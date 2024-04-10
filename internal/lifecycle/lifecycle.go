@@ -22,10 +22,10 @@ package lifecycle
 
 import (
 	"context"
-
 	"go.uber.org/fx/internal/fxlog"
 	"go.uber.org/fx/internal/fxreflect"
 	"go.uber.org/multierr"
+	"os"
 )
 
 // A Hook is a pair of start and stop callbacks, either of which can be nil,
@@ -36,15 +36,24 @@ type Hook struct {
 	caller  string
 }
 
+type Logger interface {
+	Printf(format string, params ...interface{})
+	PrintSignal(signal os.Signal)
+	PrintProvide(t interface{})
+	PrintDecorate(t interface{})
+	Panic(err error)
+	Fatalf(format string, v ...interface{})
+}
+
 // Lifecycle coordinates application lifecycle hooks.
 type Lifecycle struct {
-	logger     *fxlog.Logger
+	logger     Logger
 	hooks      []Hook
 	numStarted int
 }
 
 // New constructs a new Lifecycle.
-func New(logger *fxlog.Logger) *Lifecycle {
+func New(logger Logger) *Lifecycle {
 	if logger == nil {
 		logger = fxlog.New()
 	}
