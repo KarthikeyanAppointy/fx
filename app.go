@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
 	"reflect"
@@ -62,15 +63,15 @@ func (f optionFunc) apply(app *App) { f(app) }
 // function(s) may depend on other types available in the application, must
 // return one or more objects, and may return an error. For example:
 //
-//  // Constructs type *C, depends on *A and *B.
-//  func(*A, *B) *C
+//	// Constructs type *C, depends on *A and *B.
+//	func(*A, *B) *C
 //
-//  // Constructs type *C, depends on *A and *B, and indicates failure by
-//  // returning an error.
-//  func(*A, *B) (*C, error)
+//	// Constructs type *C, depends on *A and *B, and indicates failure by
+//	// returning an error.
+//	func(*A, *B) (*C, error)
 //
-//  // Constructs types *B and *C, depends on *A, and can fail.
-//  func(*A) (*B, *C, error)
+//	// Constructs types *B and *C, depends on *A, and can fail.
+//	func(*A) (*B, *C, error)
 //
 // The order in which constructors are provided doesn't matter, and passing
 // multiple Provide options appends to the application's collection of
@@ -157,30 +158,30 @@ func Error(errs ...error) Option {
 // packages to bundle sophisticated functionality into easy-to-use Fx modules.
 // For example, a logging package might export a simple option like this:
 //
-//  package logging
+//	 package logging
 //
-//  var Module = fx.Provide(func() *log.Logger {
-//    return log.New(os.Stdout, "", 0)
-//  })
+//		var Module = fx.Provide(func() *log.Logger {
+//		  return log.New(os.Stdout, "", 0)
+//		})
 //
 // A shared all-in-one microservice package could then use Options to bundle
 // logging with similar metrics, tracing, and gRPC modules:
 //
-//  package server
+//	package server
 //
-//  var Module = fx.Options(
-//    logging.Module,
-//    metrics.Module,
-//    tracing.Module,
-//    grpc.Module,
-//  )
+//	var Module = fx.Options(
+//	  logging.Module,
+//	  metrics.Module,
+//	  tracing.Module,
+//	  grpc.Module,
+//	)
 //
 // Since this all-in-one module has a minimal API surface, it's easy to add
 // new functionality to it without breaking existing users. Individual
 // applications can take advantage of all this functionality with only one
 // line of code:
 //
-//  app := fx.New(server.Module)
+//	app := fx.New(server.Module)
 //
 // Use this pattern sparingly, since it limits the user's ability to customize
 // their application.
@@ -230,6 +231,23 @@ func Logger(p Printer) Option {
 		app.logger = &fxlog.Logger{Printer: p}
 		app.lifecycle = &lifecycleWrapper{lifecycle.New(app.logger)}
 	})
+}
+
+func WithLogger(logger *zap.Logger) Option {
+	return withLoggerOption{
+		logger: logger,
+	}
+}
+
+type withLoggerOption struct {
+	logger *zap.Logger
+}
+
+func (l withLoggerOption) apply(app *App) {
+	logger := fxlog.NewCustomLogger(l.logger)
+	lc := &lifecycleWrapper{lifecycle.New(logger)}
+	app.lifecycle = lc
+	app.logger = logger
 }
 
 // NopLogger disables the application's log output. Note that this makes some
@@ -283,7 +301,7 @@ type App struct {
 	provides     []interface{}
 	invokes      []interface{}
 	decorators   []interface{}
-	logger       *fxlog.Logger
+	logger       lifecycle.Logger
 	startTimeout time.Duration
 	stopTimeout  time.Duration
 	errorHooks   []ErrorHandler
