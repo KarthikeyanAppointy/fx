@@ -49,7 +49,10 @@ func (l CustomLogger) PrintSignal(signal os.Signal) {
 }
 
 func (l CustomLogger) Panic(err error) {
-	l.Printf(prepend(err.Error()))
+	l.LogError(&LogRequest{
+		Message: prepend(err.Error()),
+		Objects: make([]interface{}, 0),
+	})
 	panic(err)
 }
 
@@ -59,8 +62,17 @@ func (l CustomLogger) Log(in *LogRequest) {
 
 }
 
+func (l CustomLogger) LogError(in *LogRequest) {
+
+	l.Logger.Error(fmt.Sprintf(in.Message, in.Objects...))
+
+}
+
 // Fatalf logs an Fx line then fatals.
 func (l CustomLogger) Fatalf(format string, v ...interface{}) {
-	l.Printf(prepend(format), v...)
+	l.LogError(&LogRequest{
+		Message: prepend(format),
+		Objects: v,
+	})
 	_exit()
 }
